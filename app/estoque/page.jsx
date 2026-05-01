@@ -1,0 +1,262 @@
+'use client';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@lib/supabase';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_KEY;
+
+export default function EstoquePage() {
+  const router = useRouter();
+  const [produtos, setProdutos] = useState([]);
+  const [filtro, setFiltro] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState('');
+  const [novoProduto, setNovoProduto] = useState({
+    codigo: '',
+    produto: '',
+    'GTIN/EAN': '',
+    Localizacao: '',
+    Unidade: '',
+    quantidade: 0,
+    preco: 0,
+  });
+  const [editando, setEditando] = useState(null);
+  const [mostrandoNovo, setMostrandoNovo] = useState(false);
+  const [totalProdutos, setTotalProdutos] = useState(0);
+  const [totalPecas, setTotalPecas] = useState(0);
+  const [totalValor, setTotalValor] = useState(0);
+
+  // === BUSCAR PRODUTOS ===
+  async function buscarProdutos() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('estoque')
+      .select('codigo, "GTIN/EAN", produto, "Localizacao", "Unidade", quantidade, preco')
+      .order('codigo', { ascending: true });
+
+    if (error) {
+      console.error('Erro ao buscar estoque:', error);
+      setErro('Erro ao carregar os dados do estoque.');
+    } else {
+      setProdutos(data || []);
+      calcularTotais(data || []);
+      setErro('');
+    }
+    setLoading(false);
+  }
+
+  // === CALCULAR TOTAIS ===
+  function calcularTotais(lista) {
+    const totalItens = lista.length;
+
+    const totalQtd = lista.reduce(
+      (sum, item) => sum + (Number(item.quantidade) || 0),
+      0
+    );
+
+    const totalDinheiro = lista.reduce(
+      (sum, item) =>
+        sum +
+        (Number(item.quantidade) || 0) *
+        (Number(item.preco) || 0),
+      0
+    );
+
+    setTotalProdutos(totalItens);
+    setTotalPecas(totalQtd);
+    setTotalValor(totalDinheiro);
+  }
+
+  // === ADICIONAR PRODUTO ===
+  async function adicionarProduto() {
+    if (!novoProduto.codigo) {
+      alert('O código é obrigatório.');
+      return;
+    }
+
+    const { error } = await supabase.from('estoque').insert([novoProduto]);
+    if (error) {
+      console.error('Erro ao adicionar produto:', error);
+      alert('Erro ao adicionar produto.');
+    } else {
+      alert('Produto adicionado com sucesso!');
+      setNovoProduto({
+        codigo: '',
+        produto: '',
+        'GTIN/EAN': '',
+        Localizacao: '',
+        Unidade: '',
+        quantidade: 0,
+        preco: 0,
+      });
+      setMostrandoNovo(false);
+      buscarProdutos();
+    }
+  }
+
+  // === ATUALIZAR PRODUTO ===
+  async function atualizarProduto() {
+    const { error } = await supabase
+      .from('estoque')
+      .update(editando)
+      .eq('codigo', editando.codigo);
+
+    if (error) {
+      console.error('Erro ao atualizar produto:', error);
+      alert('Erro ao atualizar produto.');
+    } else {
+      alert('Produto atualizado com sucesso!');
+      setEditando(null);
+      buscarProdutos();
+    }
+  }
+
+  // === EXCLUIR PRODUTO ===
+  async function excluirProduto(codigo) {
+    if (!confirm('Tem certeza que deseja excluir este produto?')) return;
+    const { error } = await supabase.from('estoque').delete().eq('codigo', codigo);
+
+    if (error) {
+      console.error('Erro ao excluir produto:', error);
+      alert('Erro ao excluir produto.');
+    } else {
+      alert('Produto excluído com sucesso!');
+      buscarProdutos();
+    }
+  }
+
+  // === PESQUISA FILTRADA ===
+  const produtosFiltrados = produtos.filter((p) => {
+    const termo = filtro.toLowerCase();
+    return (
+      p.codigo?.toLowerCase().includes(termo) ||
+      p.produto?.toLowerCase().includes(termo) ||
+      p['GTIN/EAN']?.toLowerCase().includes(termo)
+    );
+  });
+
+  useEffect(() => {
+    buscarProdutos();
+  }, []);
+
+  const voltarDashboard = () => router.push('/dashboard');
+
+  return (
+    <div className="p-6 text-white">
+      {/* TOPO */}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">📦 Estoque</h1>   
+        <button
+          onClick={voltarDashboard}
+          className="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded-lg shadow"
+        >
+          ← Voltar ao Dashboard
+        </button>
+      </div>
+
+      {/* ESTATÍSTICAS */}
+      <div className="flex flex-wrap gap-4 mb-6">
+        <div className="bg-gray-800 p-4 rounded-lg shadow">
+          <p className="text-gray-400 text-sm">Total de Produtos</p>
+          <p className="text-xl font-semibold">{totalProdutos}</p>
+        </div>
+
+        <div className="bg-gray-800 p-4 rounded-lg shadow">
+          <p className="text-gray-400 text-sm">Total de Peças</p>
+          <p className="text-xl font-semibold">{totalPecas}</p>
+        </div>
+
+        <div className="bg-gray-800 p-4 rounded-lg shadow">
+          <p className="text-gray-400 text-sm">Valor Total em Estoque</p>
+          <p className="text-xl font-semibold">
+            R$ {totalValor.toLocaleString('pt-BR', {
+              minimumFractionDigits: 2,
+            })}
+          </p>
+        </div>
+
+        <button
+          onClick={() => router.push('/sugestao')}
+          className="mt-6 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow transition-all"
+        >
+          Sugestão de Compra
+        </button> 
+      </div>
+
+      {/* PESQUISA + BOTÃO NOVO PRODUTO */}
+      <div className="flex items-center justify-between mb-4">
+        <input
+          type="text"
+          placeholder="Pesquisar por código, nome ou GTIN/EAN..."
+          value={filtro}
+          onChange={(e) => setFiltro(e.target.value)}
+          className="w-full md:w-2/3 p-2 rounded bg-gray-900 border border-gray-700 text-white"
+        />
+        <button
+          onClick={() => setMostrandoNovo(true)}
+          className="ml-4 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded shadow"
+        >
+          ➕ Novo Produto
+        </button>
+      </div>
+
+      {/* TABELA */}
+      {loading ? (
+        <p>Carregando...</p>
+      ) : erro ? (
+        <p className="text-red-500">{erro}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-collapse border border-gray-700">
+            <thead>
+              <tr className="bg-gray-800 text-left text-red-300">
+                <th className="border border-gray-700 px-4 py-2">Código</th>
+                <th className="border border-gray-700 px-4 py-2">Produto</th>
+                <th className="border border-gray-700 px-4 py-2">GTIN/EAN</th>
+                <th className="border border-gray-700 px-4 py-2">Localização</th>
+                <th className="border border-gray-700 px-4 py-2">Unidade</th>
+                <th className="border border-gray-700 px-4 py-2">Quantidade</th>
+                <th className="border border-gray-700 px-4 py-2">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {produtosFiltrados.length > 0 ? (
+                produtosFiltrados.map((p) => (
+                  <tr key={p.codigo} className="hover:bg-gray-800">
+                    <td className="border border-gray-700 px-4 py-2">{p.codigo}</td>
+                    <td className="border border-gray-700 px-4 py-2">{p.produto}</td>
+                    <td className="border border-gray-700 px-4 py-2">{p['GTIN/EAN']}</td>
+                    <td className="border border-gray-700 px-4 py-2">{p.Localizacao}</td>
+                    <td className="border border-gray-700 px-4 py-2">{p.Unidade}</td>
+                    <td className="border border-gray-700 px-4 py-2">{p.quantidade}</td>
+                    <td className="border border-gray-700 px-4 py-2 space-x-2">
+                      <button
+                        onClick={() => setEditando(p)}
+                        className="bg-blue-600 px-2 py-1 rounded hover:bg-blue-700"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => excluirProduto(p.codigo)}
+                        className="bg-red-600 px-2 py-1 rounded hover:bg-red-700"
+                      >
+                        Excluir
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="7" className="text-center py-4 text-gray-400">
+                    Nenhum produto encontrado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
